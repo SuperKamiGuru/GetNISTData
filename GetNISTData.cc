@@ -414,6 +414,8 @@ void FormatData(std::stringstream& stream, string natAbunFile)
         delete [] natIsoAbun[i];
     }
 
+    delete [] natIsoAbun;
+
 }
 
 bool MovePastWord(std::stringstream& stream, string word)
