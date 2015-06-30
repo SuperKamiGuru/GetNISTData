@@ -8,6 +8,7 @@ using namespace std;
 #include <sstream>
 #include <dirent.h>
 #include "include/ElementSym.hh"
+#include "include/ElementNames.hh"
 #include <iomanip>
 
 // add header file to the original string stream
@@ -17,7 +18,7 @@ enum  OutFilter {characters=1, numbers, NA, symbols};
 
 void GetDataStream( string, std::stringstream&);
 
-void FormatData(std::stringstream& streamS);
+void FormatData(std::stringstream& streamS, string natAbunFile);
 bool MovePastWord(std::stringstream& stream, string word);
 string ExtractString(std::stringstream &stream, char delim, int outType=7);
 void CropStream(std::stringstream& stream, int firstChar, int lastChar=0);
@@ -27,21 +28,22 @@ void SetDataStream( string, std::stringstream&);
 
 int main(int argc, char **argv)
 {
-    string NISTSourceName, outFileName;
+    string NISTSourceName, outFileName, natAbunFile;
     std::stringstream streamS;
 
-    if(argc==3)
+    if(argc==4)
     {
         NISTSourceName = argv[1];
-        outFileName = argv[2];
+        natAbunFile = argv[2];
+        outFileName = argv[3];
 
-            GetDataStream(NISTSourceName, streamS);
-            FormatData(streamS);
-            SetDataStream( outFileName, streamS);
+        GetDataStream(NISTSourceName, streamS);
+        FormatData(streamS, natAbunFile);
+        SetDataStream( outFileName, streamS);
     }
     else
     {
-        cout << "\nGive the the G4NISTElementBuilder.cc file and the output file name\n" <<  endl;
+        cout << "\nGive the the G4NistElementBuilder.cc file, the isotope natural abundance file and the output file name\n" <<  endl;
     }
 
     return 0;
@@ -83,7 +85,7 @@ void GetDataStream( string geoFileName, std::stringstream& ss)
     delete data;
 }
 
-void FormatData(std::stringstream& stream)
+void FormatData(std::stringstream& stream, string natAbunFile)
 {
     std::vector<double> isotopeMass;
     isotopeMass.reserve(500);
@@ -102,6 +104,9 @@ void FormatData(std::stringstream& stream)
 
     ElementSym elementSyms;
     elementSyms.SetElementSymbols();
+
+    ElementNames elemNames;
+    elemNames.SetElementNames();
 
     MovePastWord(stream, "::Initialise()");
     int pos = stream.tellg();
@@ -262,9 +267,105 @@ void FormatData(std::stringstream& stream)
     stream.str("");
     stream.clear();
 
+    numConv.str("");
+    numConv.clear();
+
+    double **natIsoAbun = new double *[elemNumIso.size()];
+
+    for(int i=0; i<int(elemNumIso.size()); i++)
+    {
+        natIsoAbun[i] = new double [elemNumIso[i]];
+        for(int j=0; j<int(elemNumIso[i]); j++)
+        {
+            natIsoAbun[i][j]=0.;
+        }
+    }
+
+    GetDataStream(natAbunFile, stream);
+
+    char letter;
+    string word;
+    int Z=0, A=0;
+    double abun=0.;
+    while(stream)
+    {
+        letter = stream.peek();
+        if((letter>='0')&&(letter<='9'))
+        {
+            letter = stream.get();
+            numConv.str("");
+            numConv.clear();
+            while((letter>='0')&&(letter<='9'))
+            {
+                numConv << letter;
+                letter = stream.get();
+            }
+            numConv >> A;
+
+            while(!((letter>='0')&&(letter<='9')))
+            {
+                letter = stream.get();
+            }
+            numConv.str("");
+            numConv.clear();
+            while(((letter>='0')&&(letter<='9'))||(letter=='.'))
+            {
+                numConv << letter;
+                letter = stream.get();
+            }
+            numConv >> abun;
+            if(elemBaseA[Z]<=A)
+                natIsoAbun[Z][A-elemBaseA[Z]] = abun;
+            else
+                cout << "Error: isotope Z:" << Z << " A:" << A << " Does not exist in the given G4NistElementBuilder.cc, but it does in the given isotope natural abundance file " << endl;
+        }
+        else if(((letter>='a')&&(letter<='z'))||((letter>='A')&&(letter<='Z')))
+        {
+            stream >> word;
+            if(elemNames.CheckName(word))
+            {
+                for(Z=1; Z<119; Z++)
+                {
+                    if(elemNames.CheckName(word, Z))
+                        break;
+                }
+                if(Z>107)
+                    break;
+            }
+        }
+        else
+        {
+            letter = stream.get();
+        }
+    }
+
+    double sum;
+    for(int i=0; i<int(elemNumIso.size()); i++)
+    {
+        sum=0;
+        for(int j=0; j<int(elemNumIso[i]); j++)
+        {
+            sum+=natIsoAbun[i][j];
+        }
+        if(sum!=0)
+        {
+            for(int j=0; j<int(elemNumIso[i]); j++)
+            {
+                natIsoAbun[i][j]/=sum;
+            }
+        }
+    }
+
+    stream.str("");
+    stream.clear();
+
+    numConv.str("");
+    numConv.clear();
+
     stream << "\n" << endl;
 
-    stream << "void IsotopeMass::SetIsotopeMass()\n{\n\telemNumIso = new int [" << arraySize << "];\n\telemBaseA = new int [" << arraySize << "];\n\tisotopeMass = new double *[" << arraySize << "];\n" << endl;
+    stream << "void IsotopeMass::SetIsotopeMass()\n{\n\telemNumIso = new int [" << arraySize << "];\n\telemBaseA = new int [" << arraySize
+            << "];\n\tisotopeMass = new double *[" << arraySize << "];\n\tisoNatAbun = new double *[" << arraySize << "];\n" << endl;
 
     for(int i=0; i<int(elemNumIso.size()); i++)
     {
@@ -280,7 +381,7 @@ void FormatData(std::stringstream& stream)
 
     stream << "\n" << endl;
 
-    stream << "\tfor(int i=0; i<" << arraySize << "; i++)\n\t{\n\t\tisotopeMass[i] = new double [elemNumIso[i]];\n\t}";
+    stream << "\tfor(int i=0; i<" << arraySize << "; i++)\n\t{\n\t\tisotopeMass[i] = new double [elemNumIso[i]];\n\t}" << endl;
 
     int count=0;
     for(int i=0; i<int(elemNumIso.size()); i++)
@@ -291,9 +392,27 @@ void FormatData(std::stringstream& stream)
         }
     }
 
+    stream << "\n" << endl;
+
+    stream << "\tfor(int i=0; i<" << arraySize << "; i++)\n\t{\n\t\tisoNatAbun[i] = new double [elemNumIso[i]];\n\t}" << endl;
+
+    for(int i=0; i<int(elemNumIso.size()); i++)
+    {
+        for(int j=0; j<int(elemNumIso[i]); j++)
+        {
+            stream << "\tisoNatAbun[" << i << "]" << "[" << j << "] = " << natIsoAbun[i][j] << ";" << endl;
+        }
+    }
+
     stream << "\n}" << endl;
 
     elementSyms.ClearStore();
+    elemNames.ClearStore();
+
+    for(int i=0; i<int(elemNumIso.size()); i++)
+    {
+        delete [] natIsoAbun[i];
+    }
 
 }
 

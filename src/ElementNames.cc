@@ -167,6 +167,8 @@ bool ElementNames::CheckName(string name, int Z)
             name[0] = name[0]*('A'-'a');
             if(name == elementName[Z])
                 return true;
+            else
+                name[0] = name[0]/('A'-'a');
         }
     }
     else
@@ -195,9 +197,11 @@ bool ElementNames::CheckName(string name)
                 return true;
             else
             {
-                name[0] = name[0]*('A'-'a');
+                name[0] = name[0]+('A'-'a');
                 if(name == elementName[i])
                     return true;
+                else
+                    name[0] = name[0]-('A'-'a');
             }
         }
     }
