@@ -28,14 +28,15 @@ void SetDataStream( string, std::stringstream&);
 
 int main(int argc, char **argv)
 {
-    string NISTSourceName, outFileName, natAbunFile;
+    string NISTSourceName, outFileName, natAbunFile="Default";
     std::stringstream streamS;
 
-    if(argc==4)
+    if(argc==4||argc==3)
     {
         NISTSourceName = argv[1];
-        natAbunFile = argv[2];
-        outFileName = argv[3];
+        outFileName = argv[2];
+        if(argc==4)
+            natAbunFile = argv[3];
 
         GetDataStream(NISTSourceName, streamS);
         FormatData(streamS, natAbunFile);
@@ -43,7 +44,8 @@ int main(int argc, char **argv)
     }
     else
     {
-        cout << "\nGive the the G4NistElementBuilder.cc file, the isotope natural abundance file and the output file name\n" <<  endl;
+        cout << "\nGive the the G4NistElementBuilder.cc file, the output file name, and optionally the isotope natural abundance file" <<
+                "\n if you don't want to use the GEANT4 natural abundance daa \n" <<  endl;
     }
 
     return 0;
@@ -89,6 +91,9 @@ void FormatData(std::stringstream& stream, string natAbunFile)
 {
     std::vector<double> isotopeMass;
     isotopeMass.reserve(500);
+    std::vector<double> g4natIsoAbun;
+    g4natIsoAbun.reserve(500);
+    double **natIsoAbun=NULL;
     std::vector<int> elemNumIso;
     elemNumIso.reserve(120);
     std::vector<int> elemBaseA;
@@ -121,9 +126,58 @@ void FormatData(std::stringstream& stream, string natAbunFile)
             numConv.str(ExtractString(stream, ',', int(numbers)));
 
             numConv >> baseA;
+        }
+        else
+        {
+            stream.clear();
+            stream.seekg(0, std::ios::beg);
+
+            if(MovePastWord(stream, (elementSyms.GetSym(i)+'N')))
+            {
+                ExtractString(stream, '{', 0);
+                numConv.str(ExtractString(stream, ',', int(numbers)));
+
+                numConv >> baseA;
+            }
+            else
+            {
+                cout << "\nError: couldn't find mass data for element " << i << endl;
+                continue;
+            }
+        }
+
+        numConv.str("");
+        numConv.clear();
+
+        if(MovePastWord(stream, (elementSyms.GetSym(i)+'A')))
+        {
+            numConv.str(ExtractString(stream, ']', int(numbers)));
+            numConv >> numIso;
             numConv.str("");
             numConv.clear();
-
+            for(int j=0; j<numIso; j++)
+            {
+                if(j==numIso-1)
+                {
+                    numConv.str(ExtractString(stream, ';', int(numbers)));
+                }
+                else
+                {
+                    numConv.str(ExtractString(stream, ',', int(numbers)));
+                }
+                stream.get();
+                numConv >> mass;
+                isotopeMass.push_back(mass);
+                numConv.str("");
+                numConv.clear();
+            }
+            elemBaseA.push_back(baseA);
+            elemNumIso.push_back(numIso);
+        }
+        else
+        {
+            stream.clear();
+            stream.seekg(0, std::ios::beg);
             if(MovePastWord(stream, (elementSyms.GetSym(i)+'A')))
             {
                 numConv.str(ExtractString(stream, ']', int(numbers)));
@@ -139,8 +193,8 @@ void FormatData(std::stringstream& stream, string natAbunFile)
                     else
                     {
                         numConv.str(ExtractString(stream, ',', int(numbers)));
-                        stream.get();
                     }
+                    stream.get();
                     numConv >> mass;
                     isotopeMass.push_back(mass);
                     numConv.str("");
@@ -151,207 +205,177 @@ void FormatData(std::stringstream& stream, string natAbunFile)
             }
             else
             {
-                stream.clear();
-                stream.seekg(0, std::ios::beg);
-                if(MovePastWord(stream, (elementSyms.GetSym(i)+'A')))
-                {
-                    numConv.str(ExtractString(stream, ']', int(numbers)));
-                    numConv >> numIso;
-                    numConv.str("");
-                    numConv.clear();
-                    for(int j=0; j<numIso; j++)
-                    {
-                        if(j==numIso-1)
-                        {
-                            numConv.str(ExtractString(stream, ';', int(numbers)));
-                        }
-                        else
-                        {
-                            numConv.str(ExtractString(stream, ',', int(numbers)));
-                        }
-                        numConv >> mass;
-                        isotopeMass.push_back(mass);
-                        numConv.str("");
-                        numConv.clear();
-                    }
-                    elemBaseA.push_back(baseA);
-                    elemNumIso.push_back(numIso);
-                }
-                else
-                {
-                    cout << "\nError: couldn't find mass data for element " << i << endl;
-                }
+                cout << "\nError: couldn't find mass data for element " << i << endl;
+                continue;
             }
         }
-        else
+
+        if(natAbunFile=="Default")
         {
-            stream.clear();
-            stream.seekg(0, std::ios::beg);
-
-            if(MovePastWord(stream, (elementSyms.GetSym(i)+'N')))
+            numConv.str("");
+            numConv.clear();
+            double isoAbun, sum=0.;
+            if(MovePastWord(stream, (elementSyms.GetSym(i)+'W')))
             {
-                ExtractString(stream, '{', 0);
-                numConv.str(ExtractString(stream, ',', int(numbers)));
-
-                numConv >> baseA;
+                numConv.str(ExtractString(stream, ']', int(numbers)));
+                numConv >> numIso;
                 numConv.str("");
                 numConv.clear();
-
-                if(MovePastWord(stream, (elementSyms.GetSym(i)+'A')))
+                for(int j=0; j<numIso; j++)
                 {
-                    numConv.str(ExtractString(stream, ']', int(numbers)));
-                    numConv >> numIso;
-                    numConv.str("");
-                    numConv.clear();
-                    for(int j=0; j<numIso; j++)
+                    if(j==numIso-1)
                     {
-                        if(j==numIso-1)
-                        {
-                            numConv.str(ExtractString(stream, ';', int(numbers)));
-                        }
-                        else
-                        {
-                            numConv.str(ExtractString(stream, ',', int(numbers)));
-                        }
-                        numConv >> mass;
-                        isotopeMass.push_back(mass);
-                        numConv.str("");
-                        numConv.clear();
-                    }
-                    elemBaseA.push_back(baseA);
-                    elemNumIso.push_back(numIso);
-                }
-                else
-                {
-                    stream.clear();
-                    stream.seekg(0, std::ios::beg);
-                    if(MovePastWord(stream, (elementSyms.GetSym(i)+'A')))
-                    {
-                        numConv.str(ExtractString(stream, ']', int(numbers)));
-                        numConv >> numIso;
-                        numConv.str("");
-                        numConv.clear();
-                        for(int j=0; j<numIso; j++)
-                        {
-                            if(j==numIso-1)
-                            {
-                                numConv.str(ExtractString(stream, ';', int(numbers)));
-                            }
-                            else
-                            {
-                                numConv.str(ExtractString(stream, ',', int(numbers)));
-                            }
-                            numConv >> mass;
-                            isotopeMass.push_back(mass);
-                            numConv.str("");
-                            numConv.clear();
-                        }
-                        elemBaseA.push_back(baseA);
-                        elemNumIso.push_back(numIso);
+                        numConv.str(ExtractString(stream, ';', int(numbers)));
                     }
                     else
                     {
-                        cout << "\nError: couldn't find mass data for element " << i << endl;
+                        numConv.str(ExtractString(stream, ',', int(numbers)));
                     }
+                    stream.get();
+                    numConv >> isoAbun;
+                    sum+=isoAbun;
+                    g4natIsoAbun.push_back(isoAbun);
+                    numConv.str("");
+                    numConv.clear();
+                }
+                for(int j=g4natIsoAbun.size()-numIso; j<int(g4natIsoAbun.size()); j++)
+                {
+                    g4natIsoAbun[j]/=sum;
                 }
             }
             else
             {
-                cout << "\nError: couldn't find mass data for element " << i << endl;
+                stream.clear();
+                stream.seekg(0, std::ios::beg);
+                if(MovePastWord(stream, (elementSyms.GetSym(i)+'W')))
+                {
+                    numConv.str(ExtractString(stream, ']', int(numbers)));
+                    numConv >> numIso;
+                    numConv.str("");
+                    numConv.clear();
+                    for(int j=0; j<numIso; j++)
+                    {
+                        if(j==numIso-1)
+                        {
+                            numConv.str(ExtractString(stream, ';', int(numbers)));
+                        }
+                        else
+                        {
+                            numConv.str(ExtractString(stream, ',', int(numbers)));
+                        }
+                        stream.get();
+                        numConv >> isoAbun;
+                        sum+=isoAbun;
+                        g4natIsoAbun.push_back(isoAbun);
+                        numConv.str("");
+                        numConv.clear();
+                    }
+                    for(int j=g4natIsoAbun.size()-numIso; j<int(g4natIsoAbun.size()); j++)
+                    {
+                        g4natIsoAbun[j]/=sum;
+                    }
+                }
+                else
+                {
+                    cout << "\nError: couldn't find abundance data for element " << i << endl;
+                }
             }
         }
     }
 
     int arraySize = elemNumIso.size();
 
-    stream.str("");
-    stream.clear();
-
-    numConv.str("");
-    numConv.clear();
-
-    double **natIsoAbun = new double *[elemNumIso.size()];
-
-    for(int i=0; i<int(elemNumIso.size()); i++)
+    if(natAbunFile!="Default")
     {
-        natIsoAbun[i] = new double [elemNumIso[i]];
-        for(int j=0; j<int(elemNumIso[i]); j++)
-        {
-            natIsoAbun[i][j]=0.;
-        }
-    }
+        stream.str("");
+        stream.clear();
 
-    GetDataStream(natAbunFile, stream);
+        numConv.str("");
+        numConv.clear();
 
-    char letter;
-    string word;
-    int Z=0, A=0;
-    double abun=0.;
-    while(stream)
-    {
-        letter = stream.peek();
-        if((letter>='0')&&(letter<='9'))
-        {
-            letter = stream.get();
-            numConv.str("");
-            numConv.clear();
-            while((letter>='0')&&(letter<='9'))
-            {
-                numConv << letter;
-                letter = stream.get();
-            }
-            numConv >> A;
+        natIsoAbun = new double *[elemNumIso.size()];
 
-            while(!((letter>='0')&&(letter<='9')))
-            {
-                letter = stream.get();
-            }
-            numConv.str("");
-            numConv.clear();
-            while(((letter>='0')&&(letter<='9'))||(letter=='.'))
-            {
-                numConv << letter;
-                letter = stream.get();
-            }
-            numConv >> abun;
-            if(elemBaseA[Z]<=A)
-                natIsoAbun[Z][A-elemBaseA[Z]] = abun;
-            else
-                cout << "Error: isotope Z:" << Z << " A:" << A << " Does not exist in the given G4NistElementBuilder.cc, but it does in the given isotope natural abundance file " << endl;
-        }
-        else if(((letter>='a')&&(letter<='z'))||((letter>='A')&&(letter<='Z')))
+        for(int i=0; i<int(elemNumIso.size()); i++)
         {
-            stream >> word;
-            if(elemNames.CheckName(word))
-            {
-                for(Z=1; Z<119; Z++)
-                {
-                    if(elemNames.CheckName(word, Z))
-                        break;
-                }
-                if(Z>107)
-                    break;
-            }
-        }
-        else
-        {
-            letter = stream.get();
-        }
-    }
-
-    double sum;
-    for(int i=0; i<int(elemNumIso.size()); i++)
-    {
-        sum=0;
-        for(int j=0; j<int(elemNumIso[i]); j++)
-        {
-            sum+=natIsoAbun[i][j];
-        }
-        if(sum!=0)
-        {
+            natIsoAbun[i] = new double [elemNumIso[i]];
             for(int j=0; j<int(elemNumIso[i]); j++)
             {
-                natIsoAbun[i][j]/=sum;
+                natIsoAbun[i][j]=0.;
+            }
+        }
+
+        GetDataStream(natAbunFile, stream);
+
+        char letter;
+        string word;
+        int Z=0, A=0;
+        double abun=0.;
+        while(stream)
+        {
+            letter = stream.peek();
+            if((letter>='0')&&(letter<='9'))
+            {
+                letter = stream.get();
+                numConv.str("");
+                numConv.clear();
+                while((letter>='0')&&(letter<='9'))
+                {
+                    numConv << letter;
+                    letter = stream.get();
+                }
+                numConv >> A;
+
+                while(!((letter>='0')&&(letter<='9')))
+                {
+                    letter = stream.get();
+                }
+                numConv.str("");
+                numConv.clear();
+                while(((letter>='0')&&(letter<='9'))||(letter=='.'))
+                {
+                    numConv << letter;
+                    letter = stream.get();
+                }
+                numConv >> abun;
+                if(elemBaseA[Z]<=A)
+                    natIsoAbun[Z][A-elemBaseA[Z]] = abun;
+                else
+                    cout << "Error: isotope Z:" << Z << " A:" << A << " Does not exist in the given G4NistElementBuilder.cc, but it does in the given isotope natural abundance file " << endl;
+            }
+            else if(((letter>='a')&&(letter<='z'))||((letter>='A')&&(letter<='Z')))
+            {
+                stream >> word;
+                if(elemNames.CheckName(word))
+                {
+                    for(Z=1; Z<119; Z++)
+                    {
+                        if(elemNames.CheckName(word, Z))
+                            break;
+                    }
+                    if(Z>107)
+                        break;
+                }
+            }
+            else
+            {
+                letter = stream.get();
+            }
+        }
+
+        double sum;
+        for(int i=0; i<int(elemNumIso.size()); i++)
+        {
+            sum=0;
+            for(int j=0; j<int(elemNumIso[i]); j++)
+            {
+                sum+=natIsoAbun[i][j];
+            }
+            if(sum!=0)
+            {
+                for(int j=0; j<int(elemNumIso[i]); j++)
+                {
+                    natIsoAbun[i][j]/=sum;
+                }
             }
         }
     }
@@ -395,12 +419,22 @@ void FormatData(std::stringstream& stream, string natAbunFile)
     stream << "\n" << endl;
 
     stream << "\tfor(int i=0; i<" << arraySize << "; i++)\n\t{\n\t\tisoNatAbun[i] = new double [elemNumIso[i]];\n\t}" << endl;
-
+    count=0;
     for(int i=0; i<int(elemNumIso.size()); i++)
     {
-        for(int j=0; j<int(elemNumIso[i]); j++)
+        if(natAbunFile!="Default")
         {
-            stream << "\tisoNatAbun[" << i << "]" << "[" << j << "] = " << natIsoAbun[i][j] << ";" << endl;
+            for(int j=0; j<int(elemNumIso[i]); j++)
+            {
+                stream << "\tisoNatAbun[" << i << "]" << "[" << j << "] = " << natIsoAbun[i][j] << ";" << endl;
+            }
+        }
+        else
+        {
+            for(int j=0; j<int(elemNumIso[i]); j++, count++)
+            {
+                stream << "\tisoNatAbun[" << i << "]" << "[" << j << "] = " << g4natIsoAbun[count] << ";" << endl;
+            }
         }
     }
 
@@ -409,13 +443,15 @@ void FormatData(std::stringstream& stream, string natAbunFile)
     elementSyms.ClearStore();
     elemNames.ClearStore();
 
-    for(int i=0; i<int(elemNumIso.size()); i++)
+    if(natAbunFile!="Default")
     {
-        delete [] natIsoAbun[i];
+        for(int i=0; i<int(elemNumIso.size()); i++)
+        {
+            delete [] natIsoAbun[i];
+        }
+
+        delete [] natIsoAbun;
     }
-
-    delete [] natIsoAbun;
-
 }
 
 bool MovePastWord(std::stringstream& stream, string word)
